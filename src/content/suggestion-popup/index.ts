@@ -1,5 +1,4 @@
-import type { StickerData, PopupPosition } from "@/types";
-import { closeStickerPicker } from "@/content/sticker-picker";
+import type { PopupPosition } from "@/types";
 
 // Inline CSS to avoid bundler issues with CSS imports
 const STYLES = `
@@ -9,56 +8,100 @@ const STYLES = `
 }
 
 .popup-container {
-  position: absolute;
   background: var(--popup-bg, #ffffff);
   border-radius: 12px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
-  padding: 8px;
-  z-index: 2147483647;
+  padding: 6px;
   animation: fadeIn 0.15s ease-out;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  pointer-events: auto;
 }
 
 .popup-container.dark {
   --popup-bg: #242526;
-  --sticker-hover-bg: rgba(255, 255, 255, 0.1);
+  --emoji-hover-bg: rgba(255, 255, 255, 0.1);
 }
 
-.sticker-grid {
+.emoji-grid {
   display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-  max-width: 320px;
+  gap: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  max-width: 400px;
+  min-width: 200px;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 0, 0, 0.2) transparent;
+  pointer-events: auto;
+  padding-left: 4px;
 }
 
-.sticker-item {
-  width: 56px;
-  height: 56px;
+.emoji-grid::-webkit-scrollbar {
+  height: 6px;
+}
+
+.emoji-grid::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.emoji-grid::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 3px;
+}
+
+.emoji-grid::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.emoji-row {
+  display: flex;
+  gap: 4px;
+  padding: 4px 4px 4px 8px;
+  flex-shrink: 0;
+}
+
+.emoji-item {
+  width: auto;
+  min-width: 44px;
+  height: 44px;
   border: none;
   border-radius: 8px;
   cursor: pointer;
   background: transparent;
-  padding: 4px;
+  padding: 0 8px;
   transition: transform 0.1s ease, background 0.1s ease;
   display: flex;
   align-items: center;
   justify-content: center;
+  font-size: 26px;
+  line-height: 1;
+  user-select: none;
+  white-space: nowrap;
+  pointer-events: auto;
+  flex-shrink: 0;
+  scroll-snap-align: start;
+  position: relative;
+  z-index: 1;
 }
 
-.sticker-item:hover {
+.emoji-item.kaomoji {
+  font-size: 11px;
+  min-width: fit-content;
+  max-width: none;
+  padding: 0 10px;
+}
+
+.emoji-item:not(.kaomoji) {
+  flex-shrink: 0;
+}
+
+.emoji-item:hover {
   transform: scale(1.1);
-  background: var(--sticker-hover-bg, rgba(0, 0, 0, 0.05));
+  background: var(--emoji-hover-bg, rgba(0, 0, 0, 0.05));
 }
 
-.sticker-item:active {
+.emoji-item:active {
   transform: scale(0.95);
-}
-
-.sticker-item img {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  pointer-events: none;
 }
 
 .loading {
@@ -95,7 +138,12 @@ function createPopupContainer(): { container: HTMLDivElement; shadow: ShadowRoot
   const container = document.createElement("div");
   container.id = POPUP_ID;
 
-  const shadow = container.attachShadow({ mode: "closed" });
+  // Apply container styles directly
+  container.style.position = "fixed";
+  container.style.zIndex = "999999999";
+  container.style.pointerEvents = "auto";
+
+  const shadow = container.attachShadow({ mode: "open" });
 
   // Inject styles
   const styleEl = document.createElement("style");
@@ -147,26 +195,35 @@ export function calculatePopupPosition(inputElement: HTMLElement): PopupPosition
 }
 
 /**
- * Create sticker button element
+ * Detect if string is kaomoji (longer or contains special characters)
  */
-function createStickerButton(
-  sticker: StickerData,
-  onClick: (sticker: StickerData) => void
+function isKaomoji(str: string): boolean {
+  return str.length > 5 || /[\(\)╯┻━┬┌┐└┛ノヽﾐ￣皿°□＿：；]/.test(str);
+}
+
+/**
+ * Create emoji button element
+ */
+function createEmojiButton(
+  emoji: string,
+  onClick: (emoji: string) => void
 ): HTMLButtonElement {
   const btn = document.createElement("button");
-  btn.className = "sticker-item";
-  btn.setAttribute("aria-label", `Select sticker ${sticker.index + 1}`);
+  btn.className = "emoji-item";
 
-  const img = document.createElement("img");
-  img.src = sticker.imageUrl;
-  img.alt = "Sticker";
-  img.loading = "lazy";
+  // Detect kaomoji (longer strings, contains special characters)
+  if (isKaomoji(emoji)) {
+    btn.classList.add("kaomoji");
+  }
 
-  btn.appendChild(img);
+  btn.setAttribute("aria-label", `Select emoji ${emoji}`);
+  btn.textContent = emoji;
+
   btn.addEventListener("click", (e) => {
     e.preventDefault();
     e.stopPropagation();
-    onClick(sticker);
+    e.stopImmediatePropagation();
+    onClick(emoji);
   });
 
   return btn;
@@ -178,37 +235,47 @@ function createStickerButton(
 export class SuggestionPopup {
   private container: HTMLDivElement | null = null;
   private shadow: ShadowRoot | null = null;
-  private onStickerSelect?: (sticker: StickerData) => void;
+  private onEmojiSelect?: (emoji: string) => void;
+  private clickOutsideHandler?: ((e: MouseEvent) => void);
+  private escapeHandler?: ((e: KeyboardEvent) => void);
 
   /**
-   * Show the popup with stickers
+   * Show the popup with emojis
    */
   show(
-    stickers: StickerData[],
+    emojis: string[],
     position: PopupPosition,
-    onStickerSelect: (sticker: StickerData) => void
+    onEmojiSelect: (emoji: string) => void
   ): void {
     this.hide();
-    this.onStickerSelect = onStickerSelect;
+    this.onEmojiSelect = onEmojiSelect;
 
     const { container, shadow } = createPopupContainer();
     this.container = container;
     this.shadow = shadow;
 
+    // Apply position to container (not popupEl inside shadow)
+    container.style.top = `${position.top}px`;
+    container.style.left = `${position.left}px`;
+
     // Create popup content
     const popupEl = document.createElement("div");
     popupEl.className = `popup-container${isDarkMode() ? " dark" : ""}`;
-    popupEl.style.top = `${position.top}px`;
-    popupEl.style.left = `${position.left}px`;
 
-    // Create sticker grid
+    // Create emoji grid
     const grid = document.createElement("div");
-    grid.className = "sticker-grid";
+    grid.className = "emoji-grid";
 
-    for (const sticker of stickers) {
-      const btn = createStickerButton(sticker, this.handleStickerClick.bind(this));
-      grid.appendChild(btn);
+    // Single row with all emojis
+    const emojiRow = document.createElement("div");
+    emojiRow.className = "emoji-row";
+
+    for (const emoji of emojis) {
+      const btn = createEmojiButton(emoji, this.handleEmojiClick.bind(this));
+      emojiRow.appendChild(btn);
     }
+
+    grid.appendChild(emojiRow);
 
     popupEl.appendChild(grid);
     shadow.appendChild(popupEl);
@@ -219,33 +286,27 @@ export class SuggestionPopup {
   }
 
   /**
-   * Show loading state
+   * Show loading state (not used for emoji matching - instant response)
    */
-  showLoading(position: PopupPosition): void {
-    this.hide();
-
-    const { container, shadow } = createPopupContainer();
-    this.container = container;
-    this.shadow = shadow;
-
-    const popupEl = document.createElement("div");
-    popupEl.className = `popup-container${isDarkMode() ? " dark" : ""}`;
-    popupEl.style.top = `${position.top}px`;
-    popupEl.style.left = `${position.left}px`;
-
-    const loadingEl = document.createElement("div");
-    loadingEl.className = "loading";
-    loadingEl.textContent = "Loading stickers...";
-
-    popupEl.appendChild(loadingEl);
-    shadow.appendChild(popupEl);
-    document.body.appendChild(container);
+  showLoading(_position: PopupPosition): void {
+    // Emoji matching is instant, so we don't need loading state
+    // This method is kept for API compatibility but does nothing
   }
 
   /**
    * Hide the popup
    */
   hide(): void {
+    // Clean up event listeners
+    if (this.clickOutsideHandler) {
+      document.removeEventListener("click", this.clickOutsideHandler);
+      this.clickOutsideHandler = undefined;
+    }
+    if (this.escapeHandler) {
+      document.removeEventListener("keydown", this.escapeHandler);
+      this.escapeHandler = undefined;
+    }
+
     if (this.container) {
       this.container.remove();
       this.container = null;
@@ -261,13 +322,13 @@ export class SuggestionPopup {
   }
 
   /**
-   * Handle sticker click
+   * Handle emoji click
    */
-  private async handleStickerClick(sticker: StickerData): Promise<void> {
+  private handleEmojiClick(emoji: string): void {
     this.hide();
 
-    if (this.onStickerSelect) {
-      this.onStickerSelect(sticker);
+    if (this.onEmojiSelect) {
+      this.onEmojiSelect(emoji);
     }
   }
 
@@ -275,25 +336,24 @@ export class SuggestionPopup {
    * Set up handlers to close popup
    */
   private setupCloseHandlers(): void {
-    const handleEscape = (e: KeyboardEvent) => {
+    this.escapeHandler = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         this.hide();
-        document.removeEventListener("keydown", handleEscape);
       }
     };
 
-    const handleClickOutside = (e: MouseEvent) => {
-      if (this.container && !this.container.contains(e.target as Node)) {
+    this.clickOutsideHandler = (e: MouseEvent) => {
+      // Check if click is outside the popup using composedPath for Shadow DOM
+      const path = e.composedPath();
+      const isClickInsidePopup = path.some(node => node === this.container);
+
+      if (!isClickInsidePopup && this.container) {
         this.hide();
-        document.removeEventListener("click", handleClickOutside);
-        closeStickerPicker();
       }
     };
 
-    // Delay to avoid immediate close
-    setTimeout(() => {
-      document.addEventListener("keydown", handleEscape);
-      document.addEventListener("click", handleClickOutside);
-    }, 100);
+    // Add handlers immediately
+    document.addEventListener("keydown", this.escapeHandler);
+    document.addEventListener("click", this.clickOutsideHandler);
   }
 }

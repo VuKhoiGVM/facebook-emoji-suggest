@@ -3,7 +3,7 @@
   "name": "Facebook Emoji Suggest",
   "version": "1.0.0",
   "description": "Suggest stickers while typing in Facebook Messenger",
-  "permissions": ["activeTab"],
+  "permissions": ["activeTab", "clipboardRead", "clipboardWrite"],
   "host_permissions": [
     "https://www.facebook.com/*",
     "https://facebook.com/*"

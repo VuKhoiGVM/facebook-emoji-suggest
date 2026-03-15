@@ -7,7 +7,14 @@ export type ExtensionMessage =
   | { type: "NO_MATCH" };
 
 /**
- * Response type for keyword matching
+ * Response type for emoji matching
+ */
+export type EmojiMatchResponse =
+  | { matched: true; emojis: string[] }
+  | { matched: false };
+
+/**
+ * Response type for keyword matching (deprecated - use EmojiMatchResponse)
  */
 export type KeywordMatchResponse =
   | { matched: true; searchTerm: string }

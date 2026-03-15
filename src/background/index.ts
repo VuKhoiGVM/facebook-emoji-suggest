@@ -1,5 +1,5 @@
-import { matchKeyword } from "@/lib/keywords";
-import type { ExtensionMessage, KeywordMatchResponse } from "@/types";
+import { matchEmoji } from "@/lib/emoji-suggestions";
+import type { ExtensionMessage, EmojiMatchResponse } from "@/types";
 
 console.log("[FB Emoji Suggest] Background service worker loaded");
 
@@ -7,12 +7,10 @@ console.log("[FB Emoji Suggest] Background service worker loaded");
 chrome.runtime.onMessage.addListener(
   (message: ExtensionMessage, _sender, sendResponse) => {
     if (message.type === "MATCH_KEYWORD") {
-      const searchTerm = matchKeyword(message.word);
-
-      const response: KeywordMatchResponse = searchTerm
-        ? { matched: true, searchTerm }
+      const emojis = matchEmoji(message.word);
+      const response: EmojiMatchResponse = emojis
+        ? { matched: true, emojis }
         : { matched: false };
-
       sendResponse(response);
     }
 

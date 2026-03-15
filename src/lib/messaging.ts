@@ -1,13 +1,13 @@
-import type { ExtensionMessage, KeywordMatchResponse } from "@/types";
+import type { ExtensionMessage, EmojiMatchResponse } from "@/types";
 
 /**
  * Send a message to the background script and wait for response
  */
 export async function sendToBackground(
   message: ExtensionMessage
-): Promise<KeywordMatchResponse> {
+): Promise<EmojiMatchResponse> {
   return new Promise((resolve) => {
-    chrome.runtime.sendMessage(message, (response: KeywordMatchResponse) => {
+    chrome.runtime.sendMessage(message, (response: EmojiMatchResponse) => {
       if (chrome.runtime.lastError) {
         console.warn("[FB Emoji Suggest] Message error:", chrome.runtime.lastError);
         resolve({ matched: false });
@@ -22,7 +22,7 @@ export async function sendToBackground(
  * Listen for messages from content scripts
  */
 export function onMessageFromContent(
-  callback: (message: ExtensionMessage) => Promise<KeywordMatchResponse>
+  callback: (message: ExtensionMessage) => Promise<EmojiMatchResponse>
 ): void {
   chrome.runtime.onMessage.addListener(
     (message: ExtensionMessage, _sender, sendResponse) => {

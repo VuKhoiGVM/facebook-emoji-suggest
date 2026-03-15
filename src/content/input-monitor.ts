@@ -1,15 +1,24 @@
 import { sendToBackground } from "@/lib/messaging";
-import type { KeywordMatchResponse } from "@/types";
+import type { EmojiMatchResponse } from "@/types";
 
 /**
  * Possible selectors for Facebook's chat input field
  * Facebook may change these, so we have multiple fallbacks
  */
 const INPUT_SELECTORS = [
+  // Current Facebook selectors (2025)
   '[contenteditable="true"][role="textbox"]',
   '[contenteditable="true"][data-lexical-editor="true"]',
+  // Legacy selectors
   'div[contenteditable="true"]',
   '[role="textbox"][contenteditable="true"]',
+  // Try finding by aria-label
+  '[aria-label*="Message" i][contenteditable="true"]',
+  '[aria-label*="message" i][contenteditable="true"]',
+  '[aria-label*="Chat" i][contenteditable="true"]',
+  '[aria-label*="chat" i][contenteditable="true"]',
+  // Very generic fallback (use last)
+  '[contenteditable="true"]',
 ];
 
 /** Debounce timeout in ms */
@@ -19,7 +28,7 @@ const DEBOUNCE_MS = 150;
 const MIN_WORD_LENGTH = 2;
 
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-let currentCallback: ((response: KeywordMatchResponse, word: string) => void) | null = null;
+let currentCallback: ((response: EmojiMatchResponse, word: string) => void) | null = null;
 
 /**
  * Find the chat input field on the page
@@ -27,13 +36,19 @@ let currentCallback: ((response: KeywordMatchResponse, word: string) => void) | 
 export function findChatInput(): HTMLElement | null {
   for (const selector of INPUT_SELECTORS) {
     const elements = document.querySelectorAll<HTMLElement>(selector);
+
     // Return the first visible, editable element
-    for (const el of elements) {
-      if (el.offsetParent !== null && el.isContentEditable) {
+    for (let i = 0; i < elements.length; i++) {
+      const el = elements[i];
+      const isVisible = el.offsetParent !== null;
+      const isEditable = el.isContentEditable;
+
+      if (isVisible && isEditable) {
         return el;
       }
     }
   }
+
   return null;
 }
 
@@ -71,23 +86,29 @@ function getCurrentWord(input: HTMLElement): string {
 async function handleInput(input: HTMLElement): Promise<void> {
   if (!currentCallback) return;
 
-  const word = getCurrentWord(input);
+  try {
+    const word = getCurrentWord(input);
 
-  // Don't trigger if word is too short
-  if (word.length < MIN_WORD_LENGTH) {
-    currentCallback({ matched: false }, word);
-    return;
+    // Don't trigger if word is too short
+    if (word.length < MIN_WORD_LENGTH) {
+      currentCallback({ matched: false }, word);
+      return;
+    }
+
+    const response = await sendToBackground({ type: "MATCH_KEYWORD", word });
+    currentCallback(response, word);
+  } catch (error) {
+    // Extension context invalidated - user needs to refresh
+    console.warn("[FB Emoji Suggest] Extension context invalidated, please refresh the page");
+    currentCallback({ matched: false }, "");
   }
-
-  const response = await sendToBackground({ type: "MATCH_KEYWORD", word });
-  currentCallback(response, word);
 }
 
 /**
  * Set up input monitoring on Facebook's chat
  */
 export function setupInputMonitor(
-  onKeywordMatch: (response: KeywordMatchResponse, word: string) => void
+  onKeywordMatch: (response: EmojiMatchResponse, word: string) => void
 ): (() => void) | null {
   const input = findChatInput();
   if (!input) {
