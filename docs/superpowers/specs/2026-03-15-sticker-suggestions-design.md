@@ -151,20 +151,6 @@ interface StickerData {
 - Add `keepOpen` parameter to `getStickersForTerm()`
 - Export `closeStickerPicker()` for popup to call after sticker selection
 
-### 3. Types (Minor Addition)
-
-Add to `src/types/index.ts`:
-```typescript
-/**
- * Message type for sticker fetching
- */
-export type ExtensionMessage =
-  | { type: "MATCH_KEYWORD"; word: string }
-  | { type: "FETCH_STICKERS"; searchTerm: string }  // NEW
-  | { type: "KEYWORD_MATCHED"; searchTerm: string }
-  | { type: "NO_MATCH" };
-```
-
 ## File Structure
 
 ```
@@ -182,7 +168,7 @@ src/
 │   ├── emoji-suggestions.ts  # Unchanged
 │   └── kaomoji.ts            # Unchanged
 └── types/
-    └── index.ts              # Modified: add FETCH_STICKERS message type
+    └── index.ts              # Unchanged (reuse existing StickerData)
 ```
 
 ## Error Handling
