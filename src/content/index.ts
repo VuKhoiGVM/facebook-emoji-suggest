@@ -1,6 +1,8 @@
 import { setupInputMonitor, findChatInput } from "@/content/input-monitor";
 import { SuggestionPopup, calculatePopupPosition } from "@/content/suggestion-popup";
+import { getStickersForTerm, clickSticker, closeStickerPicker } from "@/content/sticker-picker";
 import type { EmojiMatchResponse } from "@/types";
+import type { StickerData } from "@/types";
 
 console.log("[FB Emoji Suggest] Content script loaded");
 
@@ -149,6 +151,38 @@ function handleEmojiSelect(emoji: string): void {
 }
 
 /**
+ * Handle sticker selection
+ * This will open the sticker picker, search for the term, and click the sticker
+ */
+async function handleStickerSelect(stickerUrl: string): Promise<void> {
+  if (!currentMatchedWord) {
+    popup.hide();
+    return;
+  }
+
+  // Find the sticker in the list we fetched
+  const stickers = await getStickersForTerm(currentMatchedWord);
+
+  // Find the matching sticker by URL
+  const matchingSticker = stickers.find((s: StickerData) => s.imageUrl === stickerUrl);
+
+  if (matchingSticker) {
+    await clickSticker(matchingSticker);
+  } else if (stickers.length > 0) {
+    // Fallback: click the first sticker if URL doesn't match
+    await clickSticker(stickers[0]);
+  }
+
+  // Clear the typed word
+  if (currentMatchedWord) {
+    replaceWordWithEmoji(currentMatchedWord, "");
+    currentMatchedWord = null;
+  }
+
+  popup.hide();
+}
+
+/**
  * Handle keyword match from input monitor
  */
 async function handleKeywordMatch(
@@ -175,8 +209,21 @@ async function handleKeywordMatch(
   // Calculate position
   const position = calculatePopupPosition(input);
 
-  // Show popup with emojis (no loading needed - instant response)
-  popup.show(response.emojis, position, handleEmojiSelect);
+  // Show popup with emojis and sticker callback
+  popup.show(response.emojis, position, handleEmojiSelect, handleStickerSelect);
+
+  // Fetch stickers in background
+  getStickersForTerm(word)
+    .then((stickers: StickerData[]) => {
+      if (stickers.length > 0) {
+        popup.updateStickers(stickers);
+      } else {
+        popup.showStickerError("No stickers found");
+      }
+    })
+    .catch(() => {
+      popup.showStickerError("Stickers unavailable");
+    });
 }
 
 /**

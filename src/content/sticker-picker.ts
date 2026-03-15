@@ -88,8 +88,6 @@ async function waitForElement(
  * Find the sticker button in Facebook's chat bar
  */
 export function findStickerButton(): HTMLElement | null {
-  console.log("[FB Emoji Suggest] DEBUG: Searching for sticker button...");
-
   // First, try to find the container with all chat toolbar buttons
   // Facebook typically has: Text, GIF, Sticker, Emoji, Attach buttons
   const chatToolbarSelectors = [
@@ -102,24 +100,18 @@ export function findStickerButton(): HTMLElement | null {
   for (const toolbarSelector of chatToolbarSelectors) {
     const toolbar = document.querySelector<HTMLElement>(toolbarSelector);
     if (toolbar) {
-      console.log(`[FB Emoji Suggest] DEBUG: Found toolbar: ${toolbarSelector}`);
-
       // Look for button with emoji/smiley icon in the toolbar
       const buttons = toolbar.querySelectorAll<HTMLElement>('[role="button"], button');
-      console.log(`[FB Emoji Suggest] DEBUG: Found ${buttons.length} buttons in toolbar`);
 
       for (const btn of buttons) {
         const label = btn.getAttribute('aria-label') || '';
         const html = btn.innerHTML.toLowerCase();
-
-        console.log(`[FB Emoji Suggest] DEBUG: Button aria-label: "${label}"`);
 
         // Look for button with emoji/sticker in the label
         if (label.toLowerCase().includes('sticker') ||
             label.toLowerCase().includes('messenger') ||
             html.includes('emoji') ||
             html.includes('smiley')) {
-          console.log(`[FB Emoji Suggest] DEBUG: FOUND sticker button via toolbar search`);
           return btn;
         }
       }
@@ -129,18 +121,15 @@ export function findStickerButton(): HTMLElement | null {
   // Fallback to original selector search
   for (const selector of STICKER_BUTTON_SELECTORS) {
     const elements = document.querySelectorAll<HTMLElement>(selector);
-    console.log(`[FB Emoji Suggest] DEBUG: Selector "${selector}" found ${elements.length} elements`);
     for (const el of elements) {
       // Check if it's in the chat input area (bottom of page)
       const rect = el.getBoundingClientRect();
       if (rect.bottom > window.innerHeight * 0.5) {
-        console.log(`[FB Emoji Suggest] DEBUG: FOUND sticker button using selector: ${selector}`);
         return el;
       }
     }
   }
 
-  console.log("[FB Emoji Suggest] DEBUG: No sticker button found");
   return null;
 }
 
@@ -148,17 +137,13 @@ export function findStickerButton(): HTMLElement | null {
  * Open Facebook's sticker picker
  */
 export async function openStickerPicker(): Promise<boolean> {
-  console.log("[FB Emoji Suggest] DEBUG: Attempting to find sticker button...");
   const btn = findStickerButton();
   if (!btn) {
-    console.warn("[FB Emoji Suggest] Sticker button not found");
     return false;
   }
 
-  console.log("[FB Emoji Suggest] DEBUG: Sticker button found, clicking...");
   btn.click();
   await sleep(ANIMATION_DELAY_MS);
-  console.log("[FB Emoji Suggest] DEBUG: Clicked sticker button, waiting for picker...");
   return true;
 }
 
@@ -182,14 +167,11 @@ export async function closeStickerPicker(): Promise<void> {
  * Search for stickers in Facebook's picker
  */
 export async function searchStickers(searchTerm: string): Promise<boolean> {
-  console.log("[FB Emoji Suggest] DEBUG: Searching for stickers with term:", searchTerm);
   const searchInput = await waitForElement(SEARCH_INPUT_SELECTORS, TIMEOUT_MS);
   if (!searchInput) {
-    console.warn("[FB Emoji Suggest] Search input not found in picker");
     return false;
   }
 
-  console.log("[FB Emoji Suggest] DEBUG: Search input found:", searchInput);
   // Clear previous input and type new search
   (searchInput as HTMLInputElement).value = "";
   (searchInput as HTMLInputElement).focus();
@@ -199,7 +181,6 @@ export async function searchStickers(searchTerm: string): Promise<boolean> {
   searchInput.dispatchEvent(new Event("input", { bubbles: true }));
   searchInput.dispatchEvent(new Event("change", { bubbles: true }));
 
-  console.log("[FB Emoji Suggest] DEBUG: Waiting for search results...");
   await sleep(SEARCH_DELAY_MS);
   return true;
 }
@@ -208,7 +189,6 @@ export async function searchStickers(searchTerm: string): Promise<boolean> {
  * Extract sticker elements from the picker
  */
 export function extractStickers(): StickerData[] {
-  console.log("[FB Emoji Suggest] DEBUG: Extracting stickers from DOM...");
   const stickers: StickerData[] = [];
 
   // Look for sticker images in the picker panel
@@ -216,13 +196,9 @@ export function extractStickers(): StickerData[] {
     'img[alt*="sticker" i], img[src*="sticker"], [role="button"] img'
   );
 
-  console.log(`[FB Emoji Suggest] DEBUG: Found ${stickerImages.length} potential sticker images`);
-
   for (let i = 0; i < Math.min(stickerImages.length, MAX_STICKERS); i++) {
     const img = stickerImages[i];
     const parent = img.closest('[role="button"]') || img.parentElement;
-
-    console.log(`[FB Emoji Suggest] DEBUG: Image ${i}: src="${img.src.substring(0, 50)}...", hasParent=${!!parent}, hasSrc=${!!img.src}`);
 
     if (parent && img.src) {
       stickers.push({
@@ -233,7 +209,6 @@ export function extractStickers(): StickerData[] {
     }
   }
 
-  console.log(`[FB Emoji Suggest] DEBUG: Extracted ${stickers.length} stickers`);
   return stickers;
 }
 
@@ -266,30 +241,11 @@ export async function clickSticker(sticker: StickerData): Promise<boolean> {
 }
 
 /**
- * Check if the sticker picker panel is already open
- */
-function isPickerOpen(): boolean {
-  for (const selector of PICKER_PANEL_SELECTORS) {
-    const el = document.querySelector<HTMLElement>(selector);
-    if (el && el.offsetParent !== null) {
-      return true;
-    }
-  }
-  return false;
-}
-
-/**
  * Full flow: search and get stickers
  */
 export async function getStickersForTerm(searchTerm: string): Promise<StickerData[]> {
-  console.log("[FB Emoji Suggest] DEBUG: === getStickersForTerm START ===");
-  console.log("[FB Emoji Suggest] DEBUG: Search term:", searchTerm);
-  console.log("[FB Emoji Suggest] DEBUG: isFetchingStickers lock:", isFetchingStickers);
-  console.log("[FB Emoji Suggest] DEBUG: isPickerOpen:", isPickerOpen());
-
   // Prevent concurrent calls
   if (isFetchingStickers) {
-    console.log("[FB Emoji Suggest] DEBUG: Already fetching stickers, skipping duplicate call");
     return [];
   }
 
@@ -300,19 +256,15 @@ export async function getStickersForTerm(searchTerm: string): Promise<StickerDat
     if (!isPickerOpen()) {
       const opened = await openStickerPicker();
       if (!opened) {
-        console.log("[FB Emoji Suggest] DEBUG: Failed to open picker");
         return [];
       }
       // Wait extra time for picker to fully load after opening
       await sleep(500);
-    } else {
-      console.log("[FB Emoji Suggest] DEBUG: Picker already open, skipping open step");
     }
 
     // Search
     const searched = await searchStickers(searchTerm);
     if (!searched) {
-      console.log("[FB Emoji Suggest] DEBUG: Failed to search stickers");
       await closeStickerPicker();
       return [];
     }
@@ -320,14 +272,10 @@ export async function getStickersForTerm(searchTerm: string): Promise<StickerDat
     // Extract stickers
     const stickers = extractStickers();
 
-    console.log(`[FB Emoji Suggest] DEBUG: Final sticker count: ${stickers.length}`);
-
     if (stickers.length === 0) {
-      console.log("[FB Emoji Suggest] DEBUG: No stickers found, closing picker");
       await closeStickerPicker();
     }
 
-    console.log("[FB Emoji Suggest] DEBUG: === getStickersForTerm END ===");
     return stickers;
   } finally {
     // Always release the lock
