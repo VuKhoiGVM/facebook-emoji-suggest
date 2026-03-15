@@ -13,8 +13,8 @@ Add sticker suggestions to the existing Facebook Emoji Suggest Chrome extension.
 - Extend existing suggestion system with Facebook stickers
 - Maintain separate flow for stickers (tabbed UI)
 - Use same trigger words as emoji/kaomoji
-- Fetch stickers on-demand from Facebook's API
-- Send stickers via hybrid approach (API first, DOM fallback)
+- Fetch stickers on-demand via existing DOM-based approach
+- Send stickers by clicking through Facebook's sticker picker
 
 ## Non-Goals
 
@@ -22,6 +22,30 @@ Add sticker suggestions to the existing Facebook Emoji Suggest Chrome extension.
 - Third-party sticker APIs
 - Offline sticker support
 - Sticker favorites/recently used (future consideration)
+- Facebook API reverse-engineering (use DOM approach)
+
+## Existing Code (Reuse)
+
+The codebase already has substantial sticker infrastructure in `src/content/sticker-picker.ts`:
+
+| Function | Purpose | Reuse |
+|----------|---------|-------|
+| `findStickerButton()` | Find sticker button in chat toolbar | ✅ Reuse |
+| `openStickerPicker()` | Click to open picker | ✅ Reuse |
+| `closeStickerPicker()` | Close picker panel | ✅ Reuse |
+| `searchStickers(term)` | Type in search input | ✅ Reuse |
+| `extractStickers()` | Get sticker elements from DOM | ✅ Reuse |
+| `clickSticker(sticker)` | Click to send | ✅ Reuse |
+| `getStickersForTerm(term)` | Full flow: open → search → extract | ✅ Reuse |
+
+Existing `StickerData` type in `src/types/index.ts`:
+```typescript
+interface StickerData {
+  element: HTMLElement;  // Clickable parent element
+  imageUrl: string;      // Thumbnail URL
+  index: number;         // Position in list
+}
+```
 
 ## Architecture
 
@@ -39,20 +63,11 @@ Add sticker suggestions to the existing Facebook Emoji Suggest Chrome extension.
 │                         │  └───────────┴─────────────────┘││
 │                         └─────────────────────────────────┘│
 ├─────────────────────────────────────────────────────────────┤
-│  ┌─────────────────┐    ┌─────────────────────────────────┐│
-│  │ StickerService  │    │    StickerSender (Hybrid)       ││
-│  │  - fetch()      │    │  - sendViaAPI()                 ││
-│  │  - cache        │    │  - sendViaDOM()                 ││
-│  └─────────────────┘    └─────────────────────────────────┘│
-└─────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────┐
-│                   Background Script                         │
-├─────────────────────────────────────────────────────────────┤
-│  ┌─────────────────┐    ┌─────────────────────────────────┐│
-│  │ matchEmoji()    │    │    StickerMatcher (new)         ││
-│  │  (existing)     │    │  - keyword → sticker IDs        ││
-│  └─────────────────┘    └─────────────────────────────────┘│
+│  ┌─────────────────────────────────────────────────────────┐│
+│  │              sticker-picker.ts (EXISTING)               ││
+│  │  - getStickersForTerm() → StickerData[]                 ││
+│  │  - clickSticker() → sends sticker                       ││
+│  └─────────────────────────────────────────────────────────┘│
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -65,30 +80,27 @@ Add sticker suggestions to the existing Facebook Emoji Suggest Chrome extension.
 2. Input Monitor detects keyword
       │
       ▼
-3. Background: matchEmoji("love") returns emojis immediately
-      │
-      ├──▶ Emoji Tab: Shows instantly
+3. Emoji Tab: Shows instantly (existing flow)
       │
       └──▶ Sticker Tab: Shows loading
               │
               ▼
-4. StickerService.fetchStickers("love")
+4. getStickersForTerm("love") [from sticker-picker.ts]
+      │
+      ├──▶ openStickerPicker() - opens FB picker
+      │
+      ├──▶ searchStickers("love") - types in search
+      │
+      └──▶ extractStickers() - gets StickerData[]
+              │
+              ▼
+5. Sticker Tab: Populates with thumbnails
       │
       ▼
-5. Facebook Sticker API returns sticker data
+6. User clicks sticker
       │
       ▼
-6. Sticker Tab: Populates with thumbnails
-      │
-      ▼
-7. User clicks sticker
-      │
-      ▼
-8. StickerSender.send(stickerId)
-      │
-      ├─▶ Try: sendViaAPI() ─▶ Success ✓
-      │
-      └─▶ Fallback: sendViaDOM() ─▶ Success ✓
+7. clickSticker(sticker) - clicks element, closes picker
 ```
 
 ## Component Details
@@ -100,7 +112,7 @@ Add sticker suggestions to the existing Facebook Emoji Suggest Chrome extension.
 - Handle tab switching
 - Show loading state for stickers
 - Delegate emoji selection to existing handler
-- Delegate sticker selection to StickerSender
+- Delegate sticker selection to `clickSticker()`
 
 **UI Structure:**
 ```html
@@ -113,9 +125,11 @@ Add sticker suggestions to the existing Facebook Emoji Suggest Chrome extension.
     <!-- Emoji: horizontal scrollable row -->
     <div class="emoji-grid">...</div>
 
-    <!-- Stickers: grid or horizontal scroll -->
+    <!-- Stickers: horizontal scrollable row -->
     <div class="sticker-grid">
-      <img class="sticker-item" src="...">
+      <button class="sticker-item">
+        <img src="sticker-url">
+      </button>
     </div>
   </div>
 </div>
@@ -123,126 +137,106 @@ Add sticker suggestions to the existing Facebook Emoji Suggest Chrome extension.
 
 **Styling:**
 - Tabs: Small, subtle pills above the content
-- Stickers: 64x64px thumbnails in horizontal scrollable row
-- Loading: Skeleton placeholders or spinner
+- Stickers: 64x64px thumbnails in horizontal scrollable row (same pattern as emoji)
+- Loading: Spinner or skeleton placeholders
 
-### 2. StickerService
+### 2. sticker-picker.ts (Existing - Minor Modifications)
 
-**Responsibilities:**
-- Fetch stickers from Facebook API by keyword
-- Cache responses per session (Map<keyword, stickers>)
-- Transform API response to sticker objects
+**Current Issues to Fix:**
+- Duplicate `isPickerOpen()` function (lines 243 and 271) - remove duplicate
+- Debug console.log statements - remove in production
 
-**API Discovery (Research Required):**
-- Likely endpoints: `/api/graphql` with sticker query
-- Need to identify: sticker ID format, thumbnail URLs, send endpoint
-- May need to inspect Facebook's network requests
+**Modifications Needed:**
+- Keep picker open after extracting stickers (currently closes if no stickers found)
+- Add `keepOpen` parameter to `getStickersForTerm()`
+- Export `closeStickerPicker()` for popup to call after sticker selection
 
-**Sticker Object:**
+### 3. Types (Minor Addition)
+
+Add to `src/types/index.ts`:
 ```typescript
-interface Sticker {
-  id: string;
-  thumbnailUrl: string;
-  previewUrl: string;
-  name?: string;
-}
+/**
+ * Message type for sticker fetching
+ */
+export type ExtensionMessage =
+  | { type: "MATCH_KEYWORD"; word: string }
+  | { type: "FETCH_STICKERS"; searchTerm: string }  // NEW
+  | { type: "KEYWORD_MATCHED"; searchTerm: string }
+  | { type: "NO_MATCH" };
 ```
-
-### 3. StickerSender (Hybrid)
-
-**Responsibilities:**
-- Send sticker via Facebook's internal API
-- Fallback to DOM manipulation if API fails
-
-**API Method (Primary):**
-```typescript
-async function sendViaAPI(stickerId: string, threadId: string): Promise<boolean> {
-  // Likely GraphQL mutation
-  // Need to reverse-engineer the exact endpoint and payload
-}
-```
-
-**DOM Method (Fallback):**
-```typescript
-async function sendViaDOM(stickerId: string): Promise<boolean> {
-  // 1. Open Facebook's sticker picker
-  // 2. Find sticker by ID/data attribute
-  // 3. Click it programmatically
-  // 4. Close picker
-}
-```
-
-### 4. StickerMatcher (Background)
-
-**Responsibilities:**
-- Map keywords to sticker search queries
-- Trigger sticker fetch when keyword matches
-
-**Implementation:**
-- Reuse existing keyword detection
-- Add new message type for sticker requests
 
 ## File Structure
 
 ```
 src/
 ├── content/
-│   ├── index.ts              # Modified: handle sticker selection
+│   ├── index.ts              # Modified: add sticker tab handling
 │   ├── input-monitor.ts      # Unchanged
 │   ├── suggestion-popup/
 │   │   ├── index.ts          # Modified: add tabs
 │   │   └── styles.ts         # Modified: add tab styles
-│   ├── sticker-service.ts    # NEW: fetch stickers from FB
-│   └── sticker-sender.ts     # NEW: hybrid send mechanism
+│   └── sticker-picker.ts     # Modified: minor fixes, keep picker open
 ├── background/
-│   └── index.ts              # Modified: add sticker message handling
+│   └── index.ts              # Unchanged (stickers handled in content)
 ├── lib/
 │   ├── emoji-suggestions.ts  # Unchanged
 │   └── kaomoji.ts            # Unchanged
 └── types/
-    └── index.ts              # Modified: add Sticker types
+    └── index.ts              # Modified: add FETCH_STICKERS message type
 ```
 
 ## Error Handling
 
 | Scenario | Handling |
 |----------|----------|
-| Sticker API fails | Show "Stickers unavailable" message, keep emoji tab working |
-| Send API fails | Fallback to DOM method |
-| DOM method fails | Show error toast, log for debugging |
-| No stickers found for keyword | Hide sticker tab or show empty state |
-| Network timeout | 5s timeout, then show unavailable message |
+| Sticker button not found | Hide sticker tab, show emoji only |
+| Picker fails to open | Show "Stickers unavailable" in tab |
+| Search returns no results | Show "No stickers found" message |
+| Sticker click fails | Log error, close picker gracefully |
+| Concurrent fetch attempts | Use existing `isFetchingStickers` lock |
 
 ## Testing Strategy
 
 1. **Unit Tests:**
-   - StickerMatcher keyword mapping
-   - Sticker object transformation
-   - Cache hit/miss logic
+   - Tab switching behavior
+   - Sticker data transformation
 
 2. **Integration Tests:**
-   - Tab switching behavior
    - Sticker fetch → display flow
-   - Send mechanism fallback
+   - Click → send flow
 
 3. **Manual Testing:**
    - Verify sticker fetch works on facebook.com/messages
    - Verify sticker sends correctly
-   - Test fallback when API changes
+   - Test with various keywords (hi, love, lol, etc.)
+
+## Implementation Steps
+
+1. **Phase 1: Add Tab UI** (~30 min)
+   - Modify `SuggestionPopup` to support tabs
+   - Add tab styles
+   - Show "Stickers" tab with loading state
+
+2. **Phase 2: Integrate Sticker Fetching** (~20 min)
+   - Call `getStickersForTerm()` from content script
+   - Display stickers in tab when loaded
+   - Handle loading/error states
+
+3. **Phase 3: Handle Sticker Selection** (~15 min)
+   - Call `clickSticker()` on sticker click
+   - Close picker after sending
+   - Clear typed keyword from input
+
+4. **Phase 4: Cleanup** (~10 min)
+   - Remove duplicate `isPickerOpen()` function
+   - Remove debug logs
+   - Test and refine
 
 ## Security Considerations
 
-- Sticker API calls use Facebook's existing session (no auth tokens stored)
+- Uses Facebook's existing DOM (no API reverse-engineering)
 - No user data collected or transmitted externally
 - CSP-compliant (no inline scripts)
-
-## Rollout Plan
-
-1. **Phase 1:** Research Facebook sticker API endpoints
-2. **Phase 2:** Implement StickerService (fetch only)
-3. **Phase 3:** Add tabbed UI to popup
-4. **Phase 4:** Implement StickerSender (hybrid)
-5. **Phase 5:** Testing and refinement
 
 ## Success Criteria
 
@@ -251,3 +245,4 @@ src/
 - [ ] Clicking a sticker sends it to the chat
 - [ ] Emoji/kaomoji flow remains unchanged and instant
 - [ ] Graceful degradation when stickers unavailable
+- [ ] Picker closes cleanly after sticker is sent
