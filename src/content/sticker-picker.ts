@@ -253,42 +253,37 @@ function isPickerOpen(): boolean {
 }
 
 /**
- * Full flow: search and get stickers
+ * Check if sticker picker requires manual open
+ * Returns: 'open' if picker is ready, 'closed' if needs manual open, 'error' if something went wrong
  */
-export async function getStickersForTerm(searchTerm: string): Promise<StickerData[]> {
+export type PickerStatus = 'open' | 'closed' | 'error';
+
+/**
+ * Check sticker picker status and search if open
+ */
+export async function getStickersForTerm(searchTerm: string): Promise<{ stickers: StickerData[], status: PickerStatus }> {
   // Prevent concurrent calls
   if (isFetchingStickers) {
-    return [];
+    return { stickers: [], status: 'error' };
   }
 
   isFetchingStickers = true;
 
   try {
-    // Only open picker if not already open
+    // Check if picker is already open - user must open it manually
     if (!isPickerOpen()) {
-      const opened = await openStickerPicker();
-      if (!opened) {
-        return [];
-      }
-      // Wait extra time for picker to fully load after opening
-      await sleep(500);
+      return { stickers: [], status: 'closed' };
     }
 
-    // Search
+    // Search within the open picker
     const searched = await searchStickers(searchTerm);
     if (!searched) {
-      await closeStickerPicker();
-      return [];
+      return { stickers: [], status: 'error' };
     }
 
     // Extract stickers
     const stickers = extractStickers();
-
-    if (stickers.length === 0) {
-      await closeStickerPicker();
-    }
-
-    return stickers;
+    return { stickers, status: 'open' };
   } finally {
     // Always release the lock
     isFetchingStickers = false;

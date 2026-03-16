@@ -160,13 +160,13 @@ async function handleStickerSelect(stickerUrl: string): Promise<void> {
   }
 
   // Get stickers and find the matching one
-  const stickers = await getStickersForTerm(currentMatchedWord);
-  const matching = stickers.find((s: StickerData) => s.imageUrl === stickerUrl);
+  const result = await getStickersForTerm(currentMatchedWord);
+  const matching = result.stickers.find((s: StickerData) => s.imageUrl === stickerUrl);
 
   if (matching) {
     await clickSticker(matching);
-  } else if (stickers.length > 0) {
-    await clickSticker(stickers[0]);
+  } else if (result.stickers.length > 0) {
+    await clickSticker(result.stickers[0]);
   }
 
   // Clear the typed word
@@ -183,9 +183,16 @@ async function handleStickerSelect(stickerUrl: string): Promise<void> {
  */
 async function fetchStickers(word: string): Promise<void> {
   try {
-    const stickers = await getStickersForTerm(word);
-    if (stickers.length > 0) {
-      popup.updateStickers(stickers);
+    const result = await getStickersForTerm(word);
+
+    if (result.status === 'closed') {
+      // User needs to manually open the sticker picker first
+      popup.showStickerError("Click 📌 sticker button first");
+      return;
+    }
+
+    if (result.stickers.length > 0) {
+      popup.updateStickers(result.stickers);
     } else {
       popup.showStickerError("No stickers found");
     }

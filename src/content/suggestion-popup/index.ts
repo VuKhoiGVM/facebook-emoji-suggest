@@ -210,7 +210,7 @@ const STYLES = `
   background: var(--emoji-hover-bg, rgba(0, 0, 0, 0.05));
 }
 
-.sticker-loading, .sticker-error {
+.sticker-loading, .sticker-error, .sticker-hint {
   padding: 16px;
   text-align: center;
   font-size: 13px;
@@ -219,6 +219,11 @@ const STYLES = `
 
 .sticker-error {
   color: #dc3545;
+}
+
+.sticker-hint {
+  color: #1877f2;
+  font-weight: 500;
 }
 
 @keyframes fadeIn {
@@ -505,7 +510,7 @@ export class SuggestionPopup {
   }
 
   /**
-   * Show error in sticker tab
+   * Show error or hint in sticker tab
    */
   showStickerError(message: string): void {
     if (!this.shadow) return;
@@ -514,10 +519,11 @@ export class SuggestionPopup {
     if (!stickerContent) return;
 
     stickerContent.innerHTML = "";
-    const error = document.createElement("div");
-    error.className = "sticker-error";
-    error.textContent = message;
-    stickerContent.appendChild(error);
+    const el = document.createElement("div");
+    // Use hint styling for instructional messages
+    el.className = message.includes("📌") || message.includes("first") ? "sticker-hint" : "sticker-error";
+    el.textContent = message;
+    stickerContent.appendChild(el);
   }
 
   /**
