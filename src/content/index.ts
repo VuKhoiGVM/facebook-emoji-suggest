@@ -187,7 +187,7 @@ async function fetchStickers(word: string): Promise<void> {
 
     if (result.status === 'closed') {
       // User needs to manually open the sticker picker first
-      popup.showStickerError("Click 📌 sticker button first");
+      popup.showStickerError("Click ➕ then 📌 to open stickers");
       return;
     }
 
