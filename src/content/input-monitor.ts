@@ -54,10 +54,11 @@ export function findChatInput(): HTMLElement | null {
 
 /**
  * Extract the current word being typed at cursor position
+ * Returns { word, isFirstWord } where isFirstWord is true if this is the first word
  */
-function getCurrentWord(input: HTMLElement): string {
+function getCurrentWord(input: HTMLElement): { word: string; isFirstWord: boolean } {
   const selection = window.getSelection();
-  if (!selection || selection.rangeCount === 0) return "";
+  if (!selection || selection.rangeCount === 0) return { word: "", isFirstWord: false };
 
   const range = selection.getRangeAt(0);
   const textContent = input.textContent || "";
@@ -77,7 +78,11 @@ function getCurrentWord(input: HTMLElement): string {
     end++;
   }
 
-  return textContent.slice(start, end).trim();
+  const word = textContent.slice(start, end).trim();
+  // Check if this is the first word (no text before the word start position)
+  const isFirstWord = start === 0;
+
+  return { word, isFirstWord };
 }
 
 /**
@@ -87,7 +92,14 @@ async function handleInput(input: HTMLElement): Promise<void> {
   if (!currentCallback) return;
 
   try {
-    const word = getCurrentWord(input);
+    const { word, isFirstWord } = getCurrentWord(input);
+
+    // Only trigger on first word - if typing second/third word, hide popup
+    if (!isFirstWord) {
+      // Hide popup if user continues typing after first word
+      currentCallback({ matched: false, emojis: [] }, "");
+      return;
+    }
 
     // Don't trigger callback if word is empty - just skip silently
     // This prevents hiding the popup when there's no meaningful word
