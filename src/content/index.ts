@@ -1,8 +1,10 @@
 import { setupInputMonitor, findChatInput } from "@/content/input-monitor";
 import { SuggestionPopup, calculatePopupPosition } from "@/content/suggestion-popup";
+import { getStickersForTerm, clickSticker } from "@/content/sticker-picker";
 import type { EmojiMatchResponse } from "@/types";
+import type { StickerData } from "@/types";
 
-console.log("[FB Emoji Suggest] Content script loaded");
+console.log("[FB Emoji Suggest] Content script loaded, URL:", window.location.href);
 
 const popup = new SuggestionPopup();
 let cleanupMonitor: (() => void) | null = null;
@@ -149,6 +151,50 @@ function handleEmojiSelect(emoji: string): void {
 }
 
 /**
+ * Handle sticker selection
+ */
+async function handleStickerSelect(stickerUrl: string): Promise<void> {
+  if (!currentMatchedWord) {
+    popup.hide();
+    return;
+  }
+
+  // Get stickers and find the matching one
+  const stickers = await getStickersForTerm(currentMatchedWord);
+  const matching = stickers.find((s: StickerData) => s.imageUrl === stickerUrl);
+
+  if (matching) {
+    await clickSticker(matching);
+  } else if (stickers.length > 0) {
+    await clickSticker(stickers[0]);
+  }
+
+  // Clear the typed word
+  if (currentMatchedWord) {
+    replaceWordWithEmoji(currentMatchedWord, "");
+    currentMatchedWord = null;
+  }
+
+  popup.hide();
+}
+
+/**
+ * Fetch stickers when user clicks Stickers tab
+ */
+async function fetchStickers(word: string): Promise<void> {
+  try {
+    const stickers = await getStickersForTerm(word);
+    if (stickers.length > 0) {
+      popup.updateStickers(stickers);
+    } else {
+      popup.showStickerError("No stickers found");
+    }
+  } catch (e) {
+    popup.showStickerError("Failed to load");
+  }
+}
+
+/**
  * Handle keyword match from input monitor
  */
 async function handleKeywordMatch(
@@ -175,16 +221,21 @@ async function handleKeywordMatch(
   // Calculate position
   const position = calculatePopupPosition(input);
 
-  // Show popup with emojis (no loading needed - instant response)
-  popup.show(response.emojis, position, handleEmojiSelect);
+  // Show popup with emojis and sticker callback (only fetches on tab click)
+  popup.show(
+    response.emojis,
+    position,
+    handleEmojiSelect,
+    handleStickerSelect,
+    word,
+    () => fetchStickers(word)
+  );
 }
 
 /**
  * Initialize the extension
  */
 function init(): void {
-  console.log("[FB Emoji Suggest] Initializing...");
-
   // Clean up previous monitor if exists
   if (cleanupMonitor) {
     cleanupMonitor();
@@ -192,10 +243,6 @@ function init(): void {
 
   // Set up input monitoring
   cleanupMonitor = setupInputMonitor(handleKeywordMatch);
-
-  if (cleanupMonitor) {
-    console.log("[FB Emoji Suggest] Ready!");
-  }
 }
 
 /**
@@ -208,7 +255,6 @@ function setupNavigationWatcher(): void {
   const observer = new MutationObserver(() => {
     if (location.href !== lastUrl) {
       lastUrl = location.href;
-      console.log("[FB Emoji Suggest] Navigation detected, re-initializing...");
       init();
     }
   });

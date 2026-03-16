@@ -89,10 +89,10 @@ async function handleInput(input: HTMLElement): Promise<void> {
   try {
     const word = getCurrentWord(input);
 
-    // Don't trigger if word is too short
-    if (word.length < MIN_WORD_LENGTH) {
-      currentCallback({ matched: false }, word);
-      return;
+    // Don't trigger callback if word is empty - just skip silently
+    // This prevents hiding the popup when there's no meaningful word
+    if (!word || word.length < MIN_WORD_LENGTH) {
+      return; // Skip silently - don't hide existing popup
     }
 
     const response = await sendToBackground({ type: "MATCH_KEYWORD", word });
@@ -100,7 +100,6 @@ async function handleInput(input: HTMLElement): Promise<void> {
   } catch (error) {
     // Extension context invalidated - user needs to refresh
     console.warn("[FB Emoji Suggest] Extension context invalidated, please refresh the page");
-    currentCallback({ matched: false }, "");
   }
 }
 
@@ -125,16 +124,27 @@ export function setupInputMonitor(
     debounceTimer = setTimeout(() => handleInput(input), DEBOUNCE_MS);
   };
 
+  // Stop propagation to prevent Facebook's global handlers from intercepting
+  const stopPropagation = (e: Event) => {
+    e.stopPropagation();
+  };
+
   // Listen for input events
   input.addEventListener("input", debouncedHandler);
   input.addEventListener("keydown", debouncedHandler);
 
-  console.log("[FB Emoji Suggest] Input monitor set up");
+  // Capture phase - stop propagation before Facebook's handlers see it
+  input.addEventListener("keydown", stopPropagation, true);
+  input.addEventListener("keyup", stopPropagation, true);
+  input.addEventListener("keypress", stopPropagation, true);
 
   // Return cleanup function
   return () => {
     input.removeEventListener("input", debouncedHandler);
     input.removeEventListener("keydown", debouncedHandler);
+    input.removeEventListener("keydown", stopPropagation, true);
+    input.removeEventListener("keyup", stopPropagation, true);
+    input.removeEventListener("keypress", stopPropagation, true);
     if (debounceTimer) {
       clearTimeout(debounceTimer);
     }
