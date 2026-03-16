@@ -2,11 +2,10 @@ import { setupInputMonitor, findChatInput } from "@/content/input-monitor";
 import { SuggestionPopup, calculatePopupPosition } from "@/content/suggestion-popup";
 import type { EmojiMatchResponse } from "@/types";
 
-console.log("[FB Emoji Suggest] Content script loaded, URL:", window.location.href);
-
 const popup = new SuggestionPopup();
 let cleanupMonitor: (() => void) | null = null;
 let currentMatchedWord: string | null = null;
+let navigationObserver: MutationObserver | null = null;
 
 /**
  * Remove the typed word from the input and insert emoji using clipboard
@@ -186,7 +185,11 @@ function init(): void {
   // Clean up previous monitor if exists
   if (cleanupMonitor) {
     cleanupMonitor();
+    cleanupMonitor = null;
   }
+
+  // Clean up previous navigation watcher
+  cleanupNavigationWatcher();
 
   // Set up input monitoring
   cleanupMonitor = setupInputMonitor(handleKeywordMatch);
@@ -207,6 +210,17 @@ function setupNavigationWatcher(): void {
   });
 
   observer.observe(document.body, { childList: true, subtree: true });
+  navigationObserver = observer;
+}
+
+/**
+ * Clean up navigation watcher
+ */
+function cleanupNavigationWatcher(): void {
+  if (navigationObserver) {
+    navigationObserver.disconnect();
+    navigationObserver = null;
+  }
 }
 
 // Wait for page to be ready

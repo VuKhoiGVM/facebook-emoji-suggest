@@ -240,19 +240,6 @@ export async function clickSticker(sticker: StickerData): Promise<boolean> {
 }
 
 /**
- * Check if the sticker picker panel is already open
- */
-function isPickerOpen(): boolean {
-  for (const selector of PICKER_PANEL_SELECTORS) {
-    const el = document.querySelector<HTMLElement>(selector);
-    if (el && el.offsetParent !== null) {
-      return true;
-    }
-  }
-  return false;
-}
-
-/**
  * Check if sticker picker requires manual open
  * Returns: 'open' if picker is ready, 'closed' if needs manual open, 'error' if something went wrong
  */
