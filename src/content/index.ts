@@ -1,8 +1,6 @@
 import { setupInputMonitor, findChatInput } from "@/content/input-monitor";
 import { SuggestionPopup, calculatePopupPosition } from "@/content/suggestion-popup";
-import { getStickersForTerm, clickSticker } from "@/content/sticker-picker";
 import type { EmojiMatchResponse } from "@/types";
-import type { StickerData } from "@/types";
 
 console.log("[FB Emoji Suggest] Content script loaded, URL:", window.location.href);
 
@@ -151,57 +149,6 @@ function handleEmojiSelect(emoji: string): void {
 }
 
 /**
- * Handle sticker selection
- */
-async function handleStickerSelect(stickerUrl: string): Promise<void> {
-  if (!currentMatchedWord) {
-    popup.hide();
-    return;
-  }
-
-  // Get stickers and find the matching one
-  const result = await getStickersForTerm(currentMatchedWord);
-  const matching = result.stickers.find((s: StickerData) => s.imageUrl === stickerUrl);
-
-  if (matching) {
-    await clickSticker(matching);
-  } else if (result.stickers.length > 0) {
-    await clickSticker(result.stickers[0]);
-  }
-
-  // Clear the typed word
-  if (currentMatchedWord) {
-    replaceWordWithEmoji(currentMatchedWord, "");
-    currentMatchedWord = null;
-  }
-
-  popup.hide();
-}
-
-/**
- * Fetch stickers when user clicks Stickers tab
- */
-async function fetchStickers(word: string): Promise<void> {
-  try {
-    const result = await getStickersForTerm(word);
-
-    if (result.status === 'closed') {
-      // User needs to manually open the sticker picker first
-      popup.showStickerError("Click ➕ then 📌 to open stickers");
-      return;
-    }
-
-    if (result.stickers.length > 0) {
-      popup.updateStickers(result.stickers);
-    } else {
-      popup.showStickerError("No stickers found");
-    }
-  } catch (e) {
-    popup.showStickerError("Failed to load");
-  }
-}
-
-/**
  * Handle keyword match from input monitor
  */
 async function handleKeywordMatch(
@@ -228,15 +175,8 @@ async function handleKeywordMatch(
   // Calculate position
   const position = calculatePopupPosition(input);
 
-  // Show popup with emojis and sticker callback (only fetches on tab click)
-  popup.show(
-    response.emojis,
-    position,
-    handleEmojiSelect,
-    handleStickerSelect,
-    word,
-    () => fetchStickers(word)
-  );
+  // Show popup with emojis
+  popup.show(response.emojis, position, handleEmojiSelect);
 }
 
 /**
